@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% set CLS = {'Confident match': 'cls-ok', 'Match, needs fix': 'cls-fix', 'Under Bellhaven, not on website': 'cls-orphan'} %}
+{% block title %}All locations{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <h1>All locations</h1>
+    <p class="lede">How the last run{% if last_at %} (<span class="num">{{ last_at }}</span>){% endif %} classified every website location, plus the CRM accounts under Bellhaven that no website page lists.</p>
+  </div>
+</div>
+
+{% if rows %}
+<div class="panel dist">
+  <div class="dist-bar" role="img" aria-label="{% for name, items in rows|groupby('classification') %}{{ name }}: {{ items|length }}. {% endfor %}">
+    {% for name, items in rows|groupby('classification') %}<span class="cls {{ CLS.get(name, '') }}" style="flex:{{ items|length }}" title="{{ name }}: {{ items|length }}"></span>{% endfor %}
+  </div>
+  <div class="dist-legend">
+    {% for name, items in rows|groupby('classification') %}<span><i class="cls {{ CLS.get(name, '') }}"></i>{{ name }} <b>{{ items|length }}</b></span>{% endfor %}
+    <span class="muted" style="margin-left:auto">{{ rows|length }} rows</span>
+  </div>
+</div>
+{% endif %}
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Classification</th><th>Website location</th><th>CRM account</th><th class="num">Score</th><th class="num">Duplicates</th><th>Open proposals</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td><span class="cls-chip cls {{ CLS.get(r.classification, '') }}">{{ r.classification }}</span></td>
+    <td>{% if r.url %}<a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.location }}</a>{% else %}<span class="muted">(not on website)</span>{% endif %}</td>
+    <td>{% if r.account_id %}{% if crm_url() %}<a href="{{ crm_url(r.account_id) }}" target="_blank" rel="noopener">{{ r.account_name }}</a>{% else %}{{ r.account_name }}{% endif %}{% else %}<span class="muted">none</span>{% endif %}</td>
+    <td class="num">{% if r.score %}<span class="mini conf-{{ r.confidence }}" style="--w:{{ ([r.score, 125]|min / 125 * 100)|round(1) }}%"><i></i>{{ r.score }}</span>{% endif %}</td>
+    <td class="num">{{ r.duplicates|length or '' }}</td>
+    <td><span class="chips">{% for k in r.proposals %}<span class="kind k-{{ k }}">{{ KIND_LABEL[k] }}</span>{% endfor %}</span></td>
+  </tr>
+  {% else %}<tr class="empty-row"><td colspan="6">No run yet. Run the pipeline to classify every location.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

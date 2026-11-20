@@ -1,0 +1,5 @@
+# Daily run on the machine that also hosts the review app, so both share state/bellhaven_sync.db.
+# 6:00 AM US Central, before the sales team starts. flock skips a run if the previous one is still going.
+# The pipeline only queues proposals; nothing is written to the CRM until a reviewer approves it.
+CRON_TZ=America/Chicago
+0 6 * * * cd /opt/bellhaven-sync && flock -n /tmp/bellhaven-sync.lock .venv/bin/python -m bellhaven_sync run >> logs/sync.log 2>&1

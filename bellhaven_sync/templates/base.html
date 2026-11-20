@@ -1,0 +1,51 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Review queue{% endblock %} · Bellhaven Sync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mona+Sans:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23413fc0'/%3E%3Crect x='7' y='7' width='12' height='12' rx='2.5' fill='none' stroke='white' stroke-width='2'/%3E%3Crect x='13' y='13' width='12' height='12' rx='2.5' fill='none' stroke='white' stroke-width='2'/%3E%3Crect x='13' y='13' width='6' height='6' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+{% set decided_total = counts.get('applied', 0) + counts.get('rejected', 0) + counts.get('approved', 0) + counts.get('obsolete', 0) %}
+<header class="top"><div class="top-in">
+  <a class="brand" href="{{ url_for('queue') }}">
+    <span class="brand-mark"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="9.5" height="9.5" rx="2" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="8" width="9.5" height="9.5" rx="2" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="8" width="4" height="4" fill="currentColor"/></svg></span>
+    <span class="brand-name">Bellhaven Sync</span>
+    <span class="brand-sub">CRM ownership review</span>
+  </a>
+  <nav class="tabs" aria-label="Sections">
+    <a href="{{ url_for('queue') }}" class="tab {{ 'on' if request.endpoint == 'queue' }}" {% if request.endpoint == 'queue' %}aria-current="page"{% endif %}>Queue {% if pending_total %}<span class="count hot">{{ pending_total }}</span>{% endif %}</a>
+    <a href="{{ url_for('decided') }}" class="tab {{ 'on' if request.endpoint == 'decided' }}" {% if request.endpoint == 'decided' %}aria-current="page"{% endif %}>Decided {% if decided_total %}<span class="count">{{ decided_total }}</span>{% endif %}</a>
+    <a href="{{ url_for('matches') }}" class="tab {{ 'on' if request.endpoint == 'matches' }}" {% if request.endpoint == 'matches' %}aria-current="page"{% endif %}>All locations</a>
+    <a href="{{ url_for('activity') }}" class="tab {{ 'on' if request.endpoint == 'activity' }}" {% if request.endpoint == 'activity' %}aria-current="page"{% endif %}>CRM writes &amp; runs</a>
+  </nav>
+  <div class="top-actions">
+    {% if crm_url() %}<a class="toplink" href="{{ crm_url() }}" target="_blank" rel="noopener">CRM browser {{ icon('external', 14) }}</a>{% endif %}
+    <form method="post" action="{{ url_for('run_now') }}">
+      <button class="btn btn-secondary btn-sm btn-run" title="Scrape the website and re-check the CRM now" data-busy="Running…">{{ icon('refresh', 15) }}<span class="spin"></span><span class="label">Run pipeline now</span></button>
+    </form>
+  </div>
+</div></header>
+<main>
+  {% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}
+  <div class="flash {{ cat }}" role="status">{{ icon('check' if cat == 'ok' else ('alert' if cat == 'error' else 'info'), 16) }}<span>{{ m }}</span></div>
+  {% endfor %}{% endwith %}
+  {% block body %}{% endblock %}
+</main>
+<script>
+  // Busy state: the run and the CRM write take a few seconds. Show it, and block double submits.
+  document.addEventListener('submit', function (e) {
+    var b = e.submitter, f = e.target;
+    if (!b || !b.dataset.busy) return;
+    b.classList.add('busy');
+    var l = b.querySelector('.label'); if (l) l.textContent = b.dataset.busy;
+    setTimeout(function () { f.querySelectorAll('button').forEach(function (x) { x.disabled = true; }); }, 0);
+  });
+</script>
+</body>
+</html>

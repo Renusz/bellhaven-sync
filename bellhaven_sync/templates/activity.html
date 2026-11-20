@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}CRM writes and runs{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <h1>CRM writes &amp; runs</h1>
+    <p class="lede">The audit trail: every call that changed the CRM, and every pipeline run.</p>
+  </div>
+</div>
+
+<section>
+  <div class="section-head"><h2>Every write to the CRM</h2><span class="aside">{{ writes|length }} call{{ 's' if writes|length != 1 }}</span></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>When</th><th>Proposal</th><th>Call</th><th>Status</th><th>Sent</th></tr></thead>
+    <tbody>
+    {% for w in writes %}
+    <tr><td class="muted nowrap num">{{ w.at }}</td>
+        <td><a href="{{ url_for('detail', pid=w.proposal_id) }}" class="idtag" style="color:var(--accent)">#{{ w.proposal_id }}</a></td>
+        <td class="nowrap"><span class="method m-{{ w.method }}">{{ w.method }}</span> <code>{{ w.path }}</code></td>
+        <td><span class="code {{ 'code-ok' if w.status and w.status < 400 else 'code-err' }}">{{ w.status or '—' }}</span></td>
+        <td class="mono muted wrap-any" style="font-size:12px;min-width:260px">{{ w.request_json|truncate(160) }}</td></tr>
+    {% else %}<tr class="empty-row"><td colspan="5">No writes yet. Approving a proposal is the only way anything gets written.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>Pipeline runs</h2><span class="aside">{{ runs|length }} run{{ 's' if runs|length != 1 }}</span></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Run</th><th>Finished</th><th class="num">New</th><th class="num">Still pending</th><th class="num">Already decided (skipped)</th><th class="num">Obsolete</th></tr></thead>
+    <tbody>
+    {% for r in runs %}{% set s = (r.stats_json and r.stats_json|fromjson) or {} %}
+    <tr><td class="idtag">{{ r.id }}</td>
+        <td class="nowrap num">{% if r.finished_at %}<span class="muted">{{ r.finished_at }}</span>{% else %}<span class="status s-failed">running / failed</span>{% endif %}</td>
+        <td class="num">{{ s.queue.new if s.queue }}</td><td class="num">{{ s.queue.still_pending if s.queue }}</td>
+        <td class="num">{{ s.queue.already_decided if s.queue }}</td><td class="num">{{ s.queue.obsolete if s.queue }}</td></tr>
+    {% else %}<tr class="empty-row"><td colspan="6">No runs yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

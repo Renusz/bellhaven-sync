@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Review queue{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <h1>Review queue</h1>
+    <p class="lede">Every change the pipeline wants to make to the CRM waits here. Nothing is written until you approve it.</p>
+  </div>
+  {% if last_at %}
+  <div class="runmeta">
+    <span>Last run <b class="num">{{ last_at }}</b></span>
+    <span class="num">{{ last.website_locations }} website locations · {{ last.crm_accounts }} CRM accounts</span>
+  </div>
+  {% endif %}
+</div>
+
+{% if last and last.warnings %}
+<div class="note" style="margin-bottom:20px">{{ icon('info', 15) }}<span>From the last run: {{ last.warnings|join(' · ') }}</span></div>
+{% endif %}
+
+<div class="legend" aria-label="Waiting, by type">
+  {% for k, n in by_kind.items() %}<span class="item {{ 'zero' if not n }}"><span class="kind k-{{ k }}">{{ KIND_LABEL[k] }}</span><b>{{ n }}</b></span>{% endfor %}
+</div>
+
+{% if rows %}
+<ol class="queue">
+  {% for r in rows %}
+  <li><a class="qrow k-{{ r.kind }}" href="{{ url_for('detail', pid=r.id) }}">
+    <span class="qrow-kind"><span class="kind k-{{ r.kind }}">{{ r.kind_label }}</span>{% if r.status == 'failed' %}<span class="status s-failed">failed</span>{% endif %}</span>
+    <span class="qrow-main">
+      <span class="qrow-title">{{ r.title }}</span>
+      <span class="qrow-why">{{ r.summary }}</span>
+    </span>
+    <span class="qrow-meta"><span class="conf conf-{{ r.confidence }}">{{ r.confidence }}</span><span class="idtag">#{{ r.id }}</span></span>
+    {{ icon('chevron', 18) }}
+  </a></li>
+  {% endfor %}
+</ol>
+{% else %}
+<div class="panel empty">
+  {{ icon('check', 28) }}
+  <h2>The queue is clear</h2>
+  <p>Every proposal has been decided. Run the pipeline to check the website and the CRM for new changes.</p>
+  <form method="post" action="{{ url_for('run_now') }}" style="margin-top:6px">
+    <button class="btn btn-secondary" data-busy="Running…">{{ icon('refresh', 15) }}<span class="spin"></span><span class="label">Run pipeline now</span></button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

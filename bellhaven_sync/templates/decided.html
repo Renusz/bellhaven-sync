@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Decided{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <h1>Decided</h1>
+    <p class="lede">Approved changes written to the CRM, rejections (never proposed again), and proposals that went obsolete because the data changed.</p>
+  </div>
+  {% if rows %}
+  <div class="legend" style="margin:0">
+    {% for st, items in rows|groupby('status') %}<span class="item"><span class="status s-{{ st }}">{{ st }}</span><b>{{ items|length }}</b></span>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Decided</th><th>Status</th><th>Type</th><th>Change</th><th>Note</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr class="click" onclick="location.href='{{ url_for('detail', pid=r.id) }}'">
+    <td class="muted nowrap num">{{ r.decided_at or '' }}</td>
+    <td><span class="status s-{{ r.status }}">{{ r.status }}</span></td>
+    <td><span class="kind k-{{ r.kind }}">{{ r.kind_label }}</span></td>
+    <td><a class="title" href="{{ url_for('detail', pid=r.id) }}">{{ r.title }}</a></td>
+    <td class="muted" style="min-width:220px">{{ r.decision_comment or '' }}</td>
+  </tr>
+  {% else %}<tr class="empty-row"><td colspan="5">Nothing decided yet. Approved and rejected proposals will show up here.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}#{{ p.id }} {{ p.title }}{% endblock %}
+{% block body %}
+{% set ev = p.payload.evidence %}
+{% set ncalls = p.payload.actions|length %}
+{#- Match signals by name, so each evidence row can say whether that field agreed. -#}
+{% set sig = {} %}{% if ev.match %}{% for s in ev.match.signals %}{% set _ = sig.update({s.name: s}) %}{% endfor %}{% endif %}
+
+{% macro mark(s) -%}
+  {%- if s -%}
+    {%- if s.passed %}<span class="mk ok">{{ icon('check', 14) }}Match</span>
+    {%- else %}<span class="mk no">{{ icon('x', 14) }}Differs</span>{% endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+<div class="crumbs">
+  <a href="{{ url_for('queue') }}">{{ icon('arrow-left', 15) }}Queue</a>
+  {% if nxt %}<a class="next" href="{{ url_for('detail', pid=nxt.id) }}">Next pending: <b>{{ nxt.title|truncate(52) }}</b>{{ icon('arrow-right', 15) }}</a>{% endif %}
+</div>
+
+<div class="prop">
+  <div class="d-head">
+    <h1>{{ p.title }}</h1>
+    <div class="meta">
+      <span class="kind k-{{ p.kind }}">{{ p.kind_label }}</span>
+      <span class="status s-{{ p.status }}">{{ p.status }}</span>
+      <span class="sep"></span>
+      <span>Confidence&nbsp; <span class="conf conf-{{ p.confidence }}">{{ p.confidence }}</span></span>
+      <span class="sep"></span>
+      <span class="idtag">#{{ p.id }} · proposed in run {{ p.created_run }}</span>
+    </div>
+    <p class="why">{{ p.summary }}</p>
+  </div>
+
+  {# ---------------- What changes ---------------- #}
+  <div class="d-change">
+    <section>
+      <div class="section-head"><h2>Proposed change</h2><span class="aside">{{ ev.changes|length }} field{{ 's' if ev.changes|length != 1 }}</span></div>
+      <div class="panel diff">
+        {% for c in ev.changes %}
+        <div class="diff-row">
+          <div class="diff-field"><code>{{ c.field }}</code>{% if c.reason %}<span class="diff-reason">{{ c.reason }}</span>{% endif %}</div>
+          <div class="diff-lines">
+            {%- if c.before is not none %}
+              {%- if c.before == '' %}<div class="del empty-val"><span class="sign">−</span><span>empty</span></div>
+              {%- else %}<div class="del"><span class="sign">−</span><span>{{ c.before }}</span></div>{% endif %}
+            {%- endif %}
+            <div class="add"><span class="sign">+</span><span>{{ c.after }}</span></div>
+          </div>
+        </div>
+        {% endfor %}
+        <div class="calls">
+          <span>On approval, {{ ncalls }} API call{{ 's' if ncalls != 1 }}:</span>
+          <ol>{% for a in p.payload.actions %}{% set m = 'POST' if a.op == 'create' else 'PATCH' %}<li><span class="method m-{{ m }}">{{ m }}</span><code>{{ '/accounts' if a.op == 'create' else '/accounts/' ~ a.account_id }}</code></li>{% endfor %}</ol>
+          <span class="guard">{{ icon('shield', 15) }}It first re-reads the account and stops if anything changed since this run.</span>
+        </div>
+      </div>
+    </section>
+
+    {% if ev.sop %}
+    {% set rev = ev.sop.lifetime_revenue or 0 %}{% set ar = ev.sop.outstanding_ar or 0 %}
+    <section class="section">
+      <div class="section-head"><h2>Billing SOP check</h2><span class="aside">Change of ownership only when both are above $0</span></div>
+      <div class="panel">
+        <div class="sop-logic">
+          <div class="cond {{ 'met' if rev > 0 else 'unmet' }}">
+            <span class="lbl">Lifetime revenue</span><span class="val">${{ '{:,.0f}'.format(rev) }}</span>
+            <span class="test">{{ icon('check' if rev > 0 else 'x', 13) }}{{ 'above $0' if rev > 0 else 'not above $0' }}</span>
+          </div>
+          <span class="op">AND</span>
+          <div class="cond {{ 'met' if ar > 0 else 'unmet' }}">
+            <span class="lbl">Outstanding AR</span><span class="val">${{ '{:,.0f}'.format(ar) }}</span>
+            <span class="test">{{ icon('check' if ar > 0 else 'x', 13) }}{{ 'above $0' if ar > 0 else 'not above $0' }}</span>
+          </div>
+          <span class="op op-then">{{ icon('arrow-right', 18) }}</span>
+          <div class="outcome {{ 'k-chow' if ev.sop.branch == 'chow' else 'k-reparent' }}">
+            <span class="lbl">Outcome</span>
+            <b>{{ 'Change of ownership: keep the old account, create a new one' if ev.sop.branch == 'chow' else 'Re-parent the existing account' }}</b>
+          </div>
+        </div>
+        <p class="sop-rule">{{ ev.sop.rule }}</p>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+
+  {# ---------------- Decision rail ---------------- #}
+  <aside class="d-rail" aria-label="Decision">
+    {% if p.status in ('pending', 'failed') %}
+    <div class="panel decide">
+      <h2>Decision</h2>
+      {% if p.status == 'failed' and p.result and p.result.error %}
+      <div class="err">{{ icon('alert', 15) }}<span><b>Last attempt was not applied.</b> {{ p.result.error }}</span></div>
+      {% endif %}
+      <form method="post">
+        <label for="comment">Note for the audit log <span>(optional)</span></label>
+        <textarea id="comment" name="comment" placeholder="What you checked before deciding"></textarea>
+        <div class="buttons" style="margin-top:12px">
+          <button class="btn btn-approve btn-block" formaction="{{ url_for('approve', pid=p.id) }}" data-busy="Writing to the CRM…">{{ icon('check', 16) }}<span class="spin"></span><span class="label">{{ 'Retry' if p.status == 'failed' else 'Approve' }} and write to CRM</span></button>
+          <button class="btn btn-reject btn-block" formaction="{{ url_for('reject', pid=p.id) }}" data-busy="Rejecting…">{{ icon('x', 16) }}<span class="spin"></span><span class="label">Reject</span></button>
+        </div>
+      </form>
+      <p class="fine">Approving makes {{ ncalls }} API call{{ 's' if ncalls != 1 }}. Rejected proposals are remembered and never proposed again.</p>
+    </div>
+    {% else %}
+    <div class="panel outcome-card">
+      <div class="section-head" style="margin:0"><h2>Outcome</h2><span class="status s-{{ p.status }}">{{ p.status }}</span></div>
+      {% if p.decided_at %}<span class="when num">{{ icon('clock', 14) }}{{ p.decided_at }}</span>{% endif %}
+      {% if p.result %}
+        {% if p.result.error %}<div class="err">{{ icon('alert', 15) }}<span>{{ p.result.error }}</span></div>{% endif %}
+        {% if p.result.created_account_id or p.result.updated %}
+        <ul>
+          {% if p.result.created_account_id %}<li><span>Created account <code>{{ p.result.created_account_id }}</code></span>
+            {% if crm_url() %}<a href="{{ crm_url(p.result.created_account_id) }}" target="_blank" rel="noopener">Open in CRM browser {{ icon('external', 12) }}</a>{% endif %}</li>{% endif %}
+          {% for aid in p.result.updated or [] %}<li><span>Updated <code>{{ aid }}</code></span>
+            {% if crm_url() %}<a href="{{ crm_url(aid) }}" target="_blank" rel="noopener">Open in CRM browser {{ icon('external', 12) }}</a>{% endif %}</li>{% endfor %}
+        </ul>
+        {% endif %}
+      {% endif %}
+      {% if p.status == 'rejected' %}<p class="fine">Nothing was written, and the daily run won't propose this again.</p>{% endif %}
+      {% if p.status == 'obsolete' %}<p class="fine">The data changed after this was proposed, so it no longer applies.</p>{% endif %}
+      {% if p.decision_comment %}<div class="quote"><b>Reviewer note</b>{{ p.decision_comment }}</div>{% endif %}
+    </div>
+    {% endif %}
+  </aside>
+
+  {# ---------------- Evidence ---------------- #}
+  <div class="d-evidence">
+    <section class="section">
+      <div class="section-head"><h2>Evidence</h2><span class="aside">The website and the CRM, field by field</span></div>
+      {% if ev.website and ev.crm %}
+      {% set a = sig.get('administrator') %}
+      <div class="table-wrap">
+        <table class="compare">
+          <thead><tr>
+            <th>Field</th>
+            <th class="side"><span class="side-head">{{ icon('globe', 15) }}Website <a href="{{ ev.website.url }}" target="_blank" rel="noopener">open page {{ icon('external', 12) }}</a></span></th>
+            <th class="side"><span class="side-head">{{ icon('database', 15) }}CRM account {% if crm_url() %}<a href="{{ crm_url(ev.crm.account_id) }}" target="_blank" rel="noopener">open in CRM {{ icon('external', 12) }}</a>{% endif %}</span></th>
+            <th><span class="sr">Agrees?</span></th>
+          </tr></thead>
+          <tbody>
+            {% set s = sig.get('name') %}{% set d = 'differs' if s and not s.passed %}
+            <tr><td class="field">Name</td><td class="{{ d }}" data-side="Website">{{ ev.website.name }}</td><td class="{{ d }}" data-side="CRM">{{ ev.crm.name }}</td><td class="mk-cell">{{ mark(s) }}</td></tr>
+            {% set s = sig.get('address') %}{% set d = 'differs' if s and not s.passed %}
+            <tr><td class="field">Address</td>
+              <td class="{{ d }}" data-side="Website">{{ ev.website.street }}<br>{{ ev.website.city }}, {{ ev.website.state }} {{ ev.website.zip }}</td>
+              <td class="{{ d }}" data-side="CRM">{{ ev.crm.billing_street }}<br>{{ ev.crm.billing_city }}, {{ ev.crm.billing_state }} {{ ev.crm.billing_zip }}<span class="mk-detail">Billing address</span></td>
+              <td class="mk-cell">{{ mark(s) }}</td></tr>
+            {% set s = sig.get('care type') %}{% set d = 'differs' if s and not s.passed %}
+            <tr><td class="field">Care type</td>
+              <td class="{{ d }}" data-side="Website">{{ ev.website.care_types|join(', ') }}<span class="mk-detail">Listed as {{ ev.website.care_offerings|join(', ') }}</span></td>
+              <td class="{{ d }}" data-side="CRM">{{ ev.crm.care_type }}</td><td class="mk-cell">{{ mark(s) }}</td></tr>
+            {% set s = sig.get('phone') %}{% set d = 'differs' if s and not s.passed %}
+            <tr><td class="field">Phone</td><td class="{{ d }} num" data-side="Website">{{ ev.website.phone }}</td><td class="{{ d }} num" data-side="CRM">{{ ev.crm.phone }}</td><td class="mk-cell">{{ mark(s) }}</td></tr>
+            {% set d = 'differs' if a and not a.passed %}
+            <tr><td class="field">Administrator</td><td class="{{ d }}" data-side="Website">{{ ev.website.administrator }}</td>
+              <td class="{{ d }}" data-side="CRM">{% if a %}{{ 'A contact on this account' if a.passed else 'Not a contact on this account' }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td class="mk-cell">{{ mark(a) }}</td></tr>
+            <tr><td class="field">Parent</td><td class="absent" data-side="Website">—</td><td data-side="CRM">{{ ev.crm.parent_name or '(none)' }}</td><td class="mk-cell"></td></tr>
+            <tr><td class="field">Status</td><td class="absent" data-side="Website">—</td><td data-side="CRM">{{ ev.crm.status }}</td><td class="mk-cell"></td></tr>
+            <tr><td class="field">Revenue / AR</td><td class="absent" data-side="Website">—</td><td class="num" data-side="CRM">${{ '{:,.0f}'.format(ev.crm.lifetime_revenue or 0) }} / ${{ '{:,.0f}'.format(ev.crm.outstanding_ar or 0) }}</td><td class="mk-cell"></td></tr>
+            <tr><td class="field">Account id</td><td class="absent" data-side="Website">—</td><td data-side="CRM"><code>{{ ev.crm.account_id }}</code></td><td class="mk-cell"></td></tr>
+            <tr><td class="field">Found on</td><td data-side="Website">{{ ev.website.found_on|join(', ') }}</td><td class="absent" data-side="CRM">—</td><td class="mk-cell"></td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="panel solo">
+        <div>
+          <div class="side-head" style="padding:16px 20px 0">{{ icon('globe', 15) }}<h3>Website</h3>{% if ev.website %}<a href="{{ ev.website.url }}" target="_blank" rel="noopener">open page {{ icon('external', 12) }}</a>{% endif %}</div>
+          {% if ev.website %}
+          <dl class="kv">
+            <dt>Name</dt><dd>{{ ev.website.name }}</dd>
+            <dt>Address</dt><dd>{{ ev.website.street }}<br>{{ ev.website.city }}, {{ ev.website.state }} {{ ev.website.zip }}</dd>
+            <dt>Care offerings</dt><dd>{{ ev.website.care_offerings|join(', ') }} <span class="muted">→ {{ ev.website.care_types|join(', ') }}</span></dd>
+            <dt>Administrator</dt><dd>{{ ev.website.administrator }}</dd>
+            <dt>Phone</dt><dd class="num">{{ ev.website.phone }}</dd>
+            <dt>Found on</dt><dd>{{ ev.website.found_on|join(', ') }}</dd>
+          </dl>
+          {% else %}
+          <div class="missing">
+            <p><b style="color:var(--ink)">Not on any website page.</b> Pages checked:</p>
+            <ul class="pages">{% for u in ev.pages_checked %}<li>{{ u }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+        </div>
+        <div>
+          <div class="side-head" style="padding:16px 20px 0">{{ icon('database', 15) }}<h3>CRM account</h3>{% if ev.crm and crm_url() %}<a href="{{ crm_url(ev.crm.account_id) }}" target="_blank" rel="noopener">open in CRM {{ icon('external', 12) }}</a>{% endif %}</div>
+          {% if ev.crm %}
+          <dl class="kv">
+            <dt>Account id</dt><dd><code>{{ ev.crm.account_id }}</code></dd>
+            <dt>Name</dt><dd>{{ ev.crm.name }}</dd>
+            <dt>Parent</dt><dd>{{ ev.crm.parent_name or '(none)' }}</dd>
+            <dt>Billing address</dt><dd>{{ ev.crm.billing_street }}<br>{{ ev.crm.billing_city }}, {{ ev.crm.billing_state }} {{ ev.crm.billing_zip }}</dd>
+            <dt>Care type</dt><dd>{{ ev.crm.care_type }}</dd>
+            <dt>Phone</dt><dd class="num">{{ ev.crm.phone }}</dd>
+            <dt>Status</dt><dd>{{ ev.crm.status }}</dd>
+            <dt>Revenue / AR</dt><dd class="num">${{ '{:,.0f}'.format(ev.crm.lifetime_revenue or 0) }} / ${{ '{:,.0f}'.format(ev.crm.outstanding_ar or 0) }}</dd>
+          </dl>
+          {% else %}
+          <div class="missing">{{ icon('search', 22) }}<p>No CRM account matched this location.{% if ev.near_misses %} The lookalikes below were checked and rejected.{% endif %}</p></div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </section>
+
+    {% if ev.match %}
+    {% set maxp = [125, ev.match.score]|max %}
+    <section class="section">
+      <div class="section-head"><h2>Why we think they're the same facility</h2><span class="aside">Accept at 45, high confidence at 70</span></div>
+      <div class="panel">
+        <div class="score">
+          <div class="score-num"><b>{{ ev.match.score }}</b><span>points · {{ ev.match.confidence }} confidence</span></div>
+          <div class="meter">
+            <div class="meter-track" role="img" aria-label="Score {{ ev.match.score }}. Accepted at 45, high confidence at 70.">
+              {% for s in ev.match.signals if s.passed and s.points %}<span class="seg" style="width:calc({{ (s.points / maxp * 100)|round(3) }}% - 2px)" title="{{ s.name }}: +{{ s.points }}">{{ s.name if s.points >= 15 }}</span>{% endfor %}
+            </div>
+            <div class="ticks">
+              <span class="tick" style="left:{{ (45 / maxp * 100)|round(3) }}%"><span>45 accept</span></span>
+              <span class="tick" style="left:{{ (70 / maxp * 100)|round(3) }}%"><span>70 high</span></span>
+            </div>
+          </div>
+        </div>
+        <ul class="signals">
+          {% for s in ev.match.signals %}
+          <li class="{{ 'ok' if s.passed else 'no' }}">{{ icon('check' if s.passed else 'x', 16) }}<span class="name">{{ s.name }}</span><span class="detail">{{ s.detail }}</span><span class="pts">{{ '+' ~ s.points if s.points else '0' }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if ev.cluster %}
+    <section class="section">
+      <div class="section-head"><h2>All CRM copies of this facility</h2><span class="aside">{{ ev.cluster|length }} accounts</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Role</th><th>Account</th><th>Parent</th><th class="num">Score</th></tr></thead>
+        <tbody>
+        {% for c in ev.cluster %}
+        <tr><td><span class="role role-{{ c.role }}">{{ c.role }}</span></td>
+            <td><b style="font-weight:550">{{ c.name }}</b><br><span class="idtag">{{ c.account_id }}</span></td>
+            <td>{{ c.parent_name or '(none)' }}</td>
+            <td class="num"><span class="mini" style="--w:{{ ([c.score, 125]|min / 125 * 100)|round(1) }}%"><i></i>{{ c.score }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      <p class="after-note">{{ ev.survivor_reason }}</p>
+    </section>
+    {% endif %}
+
+    {% if ev.near_misses %}
+    <section class="section">
+      <div class="section-head"><h2>Lookalikes considered and rejected</h2><span class="aside">{{ ev.near_misses|length }} account{{ 's' if ev.near_misses|length != 1 }}</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Account</th><th>Parent</th><th class="num">Score</th><th>Why not</th></tr></thead>
+        <tbody>
+        {% for n in ev.near_misses %}
+        <tr><td><b style="font-weight:550">{{ n.name }}</b><br><span class="idtag">{{ n.account_id }}</span></td>
+            <td>{{ n.parent_name or '(none)' }}</td><td class="num">{{ n.score }}</td>
+            <td><span class="reason">{{ n.disqualified or 'below the 45-point threshold' }}</span><span class="muted">{{ (n.signals|selectattr('name', 'equalto', 'address')|map(attribute='detail')|first) or (n.signals|map(attribute='detail')|first) }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </section>
+    {% endif %}
+
+    {% if writes %}
+    <section class="section">
+      <div class="section-head"><h2>CRM writes for this proposal</h2><span class="aside">{{ writes|length }} call{{ 's' if writes|length != 1 }}</span></div>
+      <ol class="panel writes">
+        {% for w in writes %}
+        <li>
+          <div class="write-line">
+            <span class="method m-{{ w.method }}">{{ w.method }}</span><code>{{ w.path }}</code>
+            <span class="code {{ 'code-ok' if w.status and w.status < 400 else 'code-err' }}">{{ w.status or '—' }}</span>
+            <span class="when num">{{ w.at }}</span>
+          </div>
+          <details><summary>Request and response</summary>
+            {% if w.request_json %}<pre>{{ w.request_json|fromjson|tojson(indent=2) }}</pre>{% endif %}
+            {% if w.response_json %}<pre>{{ w.response_json }}</pre>{% endif %}
+          </details>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
